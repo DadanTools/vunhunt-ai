@@ -1,0 +1,8 @@
+{
+  "name": "VulnHunter AI",
+  "description": "Mobile-first bug bounty research and vulnerability assessment workbench for authorized security testing with scope enforcement and local audit trail.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
