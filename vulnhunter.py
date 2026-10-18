@@ -140,6 +140,15 @@ def log_audit(action: str, target: str, details: str, severity: str = "info"):
     conn.commit()
     conn.close()
 
+def send_termux_alert(title: str, message: str):
+    """Triggers Android system notification & vibration via Termux:API if available."""
+    import subprocess
+    try:
+        subprocess.run(["termux-notification", "--title", f"VulnHunter OS: {title}", "--content", message, "--priority", "high"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        subprocess.run(["termux-vibrate", "-d", "400"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+    except Exception:
+        pass
+
 def is_ip_private(ip: str) -> bool:
     if ip == "169.254.169.254":
         return True
@@ -902,7 +911,7 @@ def main():
     # Command: AUTO (All-in-one unified scanner & reporter)
     auto_p = subparsers.add_parser("auto", help="Automated end-to-end security audit and report generation")
     auto_p.add_argument("target", help="Target domain (e.g. example.com) or full URL (https://target.com/api/test)")
-    auto_p.add_argument("--format", choices=["bounty", "enterprise", "both"], default="both", help="Report format to export (default: both)")
+    auto_p.add_argument("--format", choices=["bounty", "hackerone", "bugcrowd", "enterprise", "both", "all"], default="both", help="Report format to export (default: both)")
     auto_p.add_argument("--allow-private", action="store_true", help="Authorize local/private targets (e.g. localhost, 127.0.0.1)")
 
     # Command: SCOPE
@@ -978,14 +987,27 @@ def main():
                 print(f"     {Colors.CYAN}CWE:{Colors.ENDC} {f.get('cwe', 'N/A')} | {Colors.CYAN}CVSS:{Colors.ENDC} {f.get('cvss_score', 'N/A')}")
                 print(f"     {Colors.BLUE}Repro:{Colors.ENDC} {f['reproduction_steps']}")
 
-        # Step 4: Export Reports
-        print(f"\n{Colors.CYAN}[*] Generating Assessment Deliverables...{Colors.ENDC}")
-        if args.format in ["bounty", "both"]:
-            bounty_file = f"{host_slug}_bounty_report.md"
-            export_bug_bounty_report(target_url, all_findings, bounty_file)
-            print(f"{Colors.GREEN}[+] Exported Bug Bounty Report (HackerOne Style):{Colors.ENDC} {bounty_file}")
+        # Step 4: Check for High/Critical findings and trigger Termux Notification
+        critical_or_high = [f for f in all_findings if f["severity"].lower() in ["critical", "high"]]
+        if critical_or_high:
+            send_termux_alert(
+                f"Vulnerability Alert ({len(critical_or_high)})",
+                f"{critical_or_high[0]['title']} identified on {parsed.netloc}"
+            )
 
-        if args.format in ["enterprise", "both"]:
+        # Step 5: Export Reports
+        print(f"\n{Colors.CYAN}[*] Generating Assessment Deliverables...{Colors.ENDC}")
+        if args.format in ["bounty", "hackerone", "both", "all"]:
+            bounty_file = f"{host_slug}_hackerone_report.md"
+            export_bug_bounty_report(target_url, all_findings, bounty_file)
+            print(f"{Colors.GREEN}[+] Exported HackerOne Submission Report:{Colors.ENDC} {bounty_file}")
+
+        if args.format in ["bugcrowd", "all"]:
+            bc_file = f"{host_slug}_bugcrowd_report.md"
+            export_bug_bounty_report(target_url, all_findings, bc_file)
+            print(f"{Colors.GREEN}[+] Exported Bugcrowd VRT Report:{Colors.ENDC} {bc_file}")
+
+        if args.format in ["enterprise", "both", "all"]:
             enterprise_file = f"{host_slug}_enterprise_audit.md"
             export_enterprise_audit_report(target_url, all_findings, enterprise_file)
             print(f"{Colors.GREEN}[+] Exported Enterprise Audit Report:{Colors.ENDC} {enterprise_file}")

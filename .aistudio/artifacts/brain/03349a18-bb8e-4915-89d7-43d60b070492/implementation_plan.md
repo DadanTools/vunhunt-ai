@@ -1,122 +1,110 @@
-# VulnHunter AI: Production-Grade Security Assessment & Pentest Workbench
+# VulnHunter OS: Advanced Bug Bounty & Vulnerability Research Suite
 
-This document details the architectural specifications and execution plan for **VulnHunter AI**, a real-world, production-grade vulnerability assessment workbench engineered for **Android Termux** and modern web browsers. It eliminates reliance on broken dependencies or mock tools, providing genuine, non-destructive security auditing with zero external API requirements.
-
----
-
-## 1. System Vision & Non-Negotiable Engineering Standards
-
-- **100% Real Functionality**: Every check executes authentic network requests, analyzes actual HTTP responses, inspects TLS handshake metadata, and parses real server banners. Zero placeholder data or simulated results.
-- **Dual Target Ingestion**: Seamlessly processes both bare domains (`example.com` with auto-protocol probing) and deep endpoint URLs (`https://example.com/api/user?id=101`).
-- **Dual Reporting Engines**: Outputs both **Bug Bounty Submission format** (HackerOne/Bugcrowd with CVSS ratings and reproduction commands) and **Enterprise Compliance format** (executive summary, risk heatmaps, OWASP Top 10 / CWE mapping).
-- **Zero-Failure Termux Compatibility**: The entire engine is implemented in pure Python 3 standard library (`urllib.request`, `sqlite3`, `ssl`, `http.server`, `socket`), guaranteeing it runs on any Android Termux installation without compilation errors or root access.
+This blueprint establishes the architecture to transform **VulnHunter AI** into a dedicated **Bug Bounty Operating Suite ("VulnHunter OS")** for Android Termux. It introduces deep OS-level integration, automated bug bounty policy triage, vulnerability chaining synthesis, an interactive CVSS v3.1 calculator, multi-method reproduction generators, and production-ready report compilation.
 
 ---
 
-## 2. Technical Architecture & Multi-Vector Audit Pipeline
+## 1. System Architecture: VulnHunter OS
 
 ```
-+-------------------------------------------------------------------------------+
-|                       TARGET INGESTION (Bare Domain or Full URL)              |
-|              e.g., "example.com" OR "https://example.com/api/profile?id=42"    |
-+---------------------------------------+---------------------------------------+
-                                        |
-                                        v
-+-------------------------------------------------------------------------------+
-|                   STAGE 0: AUTO-SCOPE GATE & PRE-FLIGHT                       |
-|  - Normalizes target into origin and path.                                    |
-|  - Revalidates DNS & blocks private IP / cloud metadata SSRF (169.254.169.254)|
-|  - Auto-authorizes target into local SQLite database.                         |
-+---------------------------------------+---------------------------------------+
-                                        |
-                                        v
-+-------------------------------------------------------------------------------+
-|                   STAGE 1: FAST INFRASTRUCTURE & EXPOSURE AUDIT               |
-|  [1.1] TLS/SSL Inspection: Protocol, cipher suite, cert validity & expiration. |
-|  [1.2] Security Headers: CSP, HSTS (preload), X-Frame-Options, nosniff, CORS. |
-|  [1.3] Cookie Security: HttpOnly, Secure, SameSite, session token entropy.    |
-|  [1.4] Server Fingerprinting: Server, X-Powered-By, ASP.NET leakage banners.  |
-|  [1.5] Sensitive Path Probing (150ms rate-limited):                           |
-|        .env, .git/HEAD, .git/config, robots.txt, sitemap.xml, backup.sql      |
-+---------------------------------------+---------------------------------------+
-                                        |
-                                        v
-+-------------------------------------------------------------------------------+
-|                   STAGE 2: DEEP HEURISTIC EXPLORATION                         |
-|  [2.1] Unencoded Parameter Canary: Unique dynamic token reflection probe.     |
-|  [2.2] Permissive CORS Inspection: Origin spoofing + Credential exposure.     |
-|  [2.3] Open Parameter Redirect: Safe destination reflection detection.        |
-|  [2.4] BOLA / IDOR Verification: Dual-tenant token cross-read comparison.     |
-+---------------------------------------+---------------------------------------+
-                                        |
-                                        v
-+-------------------------------------------------------------------------------+
-|                   STAGE 3: DUAL-FORMAT REPORTING GENERATOR                    |
-|  [Report A] Bug Bounty Standard (HackerOne / Bugcrowd):                       |
-|             - CVSS v3.1 Severity Score & Vector                               |
-|             - CWE & OWASP Top 10 Classification                               |
-|             - Step-by-Step Reproduction Guide with Safe cURL Commands         |
-|             - Sanitized Evidence (All tokens/keys redacted)                   |
-|             - Business Impact & Remediation Patches                           |
-|  [Report B] Enterprise Security Audit Report:                                 |
-|             - Executive Posture Matrix & Severity Distribution                |
-|             - Technical Root-Cause Explanations                               |
-|             - Code & Web Server Fixes (Nginx, Apache, Node, Python)           |
-+-------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------+
+|                                      VULNHUNTER OS CORE                                       |
++-----------------------------------------------------------------------------------------------+
+|                                                                                               |
+|  [Layer 1: Termux OS & Runtime Subsystem]          [Layer 2: Advanced Bounty Research Engine] |
+|   - Low-Resource Background Daemon Mode             - Automated Bounty Policy & Triage Filter |
+|   - Termux:API Push Notifications & Vibration       - Vulnerability Chaining Synthesizer      |
+|   - Adaptive Jitter & Anti-WAF Backoff              - Dual-Tenant IDOR/BOLA Testing           |
+|   - Zero-Pip Python 3 Standard Library              - API & Swagger/OpenAPI Introspection     |
+|                                                                                               |
++-----------------------------------------------+-----------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|  [Layer 3: Verification & Reproduction Engine]                                                |
+|   - Interactive CVSS v3.1 Metric Calculator (Base, Temporal, Vector String)                   |
+|   - Multi-Method PoC Generator: (1) Copy-paste cURL, (2) Raw HTTP Wire Text, (3) Python 3     |
+|   - Deep Secret & PII Redactor (JWTs, Bearer Tokens, Passwords, Session Hashes)               |
++-----------------------------------------------+-----------------------------------------------+
+                                                |
+                                                v
++-----------------------------------------------------------------------------------------------+
+|  [Layer 4: Interactive Report Builder & Submission Exporter]                                  |
+|   - HackerOne Format (Asset, Weakness CWE, CVSS Vector, Repro, Impact, Patch)                 |
+|   - Bugcrowd VRT Format (VRT Taxonomy, P1-P5 Priority Rating, Technical Proof)                |
+|   - Enterprise Compliance Format (Executive Risk Heatmap, OWASP ASVS, Nginx/Apache Directives)|
+|   - Machine-Readable SARIF & JSON Format (CI/CD and Vulnerability Management Systems)         |
+|   - One-Click Section Clipboard (Instant copy into bug bounty submission textareas)           |
++-----------------------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 3. Implementation Details
+## 2. Deep Dive: New Capabilities
 
-### Step 1: Enhanced Target Normalization & Ingestion (`vulnhunter.py`)
-- Automatically detects if input is a bare domain (`target.com`) or full URL (`https://target.com/page?q=test`).
-- If bare domain: Automatically tests `https://` first with fallback to `http://`, handles port detection, and identifies root redirects.
-- Injects target into `scopes` table with active permission.
+### Feature 1: Termux OS System Integration (`vulnhunter.py` & `setup_termux.sh`)
+- **Background Daemon Mode**:
+  - Run continuous scans as background jobs in Termux:
+    `python3 vulnhunter.py daemon --target target.com --interval 3600`
+- **Mobile Alert Hooks (`termux-notification`)**:
+  - Automatically triggers Android system notifications and phone vibration when a High or Critical finding is confirmed via `termux-notification --title "VulnHunter Alert" --content "Confirmed BOLA on target.com"`.
+- **Adaptive Jitter & Anti-429 Rate Limiter**:
+  - Automatically applies randomized sleep intervals (50ms–250ms) and detects `429 Too Many Requests` or WAF challenge pages, backing off intelligently to prevent IP blocking.
 
-### Step 2: Expanded Vulnerability Detection Vectors
-Implement deep heuristic checks in `vulnhunter.py` (matching the full TypeScript backend):
-1. **SSL/TLS & Protocol Audit**: Extracts certificate validity, issuer, and expiration date using standard `ssl.SSLSocket`.
-2. **Defensive Headers Audit**: Evaluates CSP completeness, HSTS configuration, clickjacking defense (`frame-ancestors` / `DENY`), and MIME-sniffing prevention.
-3. **Cookie Security Audit**: Parses all `Set-Cookie` directives, flagging missing `HttpOnly`, `Secure`, and `SameSite` attributes.
-4. **Sensitive Dotfile Reconnaissance**: Probes `.env`, `.git/config`, `robots.txt`, `.DS_Store`, and `sitemap.xml` with rate-limiting and response verification.
-5. **CORS Misconfiguration**: Sends crafted `Origin: https://attacker-lab.com` and verifies if `Access-Control-Allow-Origin` reflects the untrusted origin alongside `Access-Control-Allow-Credentials: true`.
-6. **Reflected Canary Analysis**: Inject unique `vh_<random>` string into query parameters and checks if it reflects verbatim without HTML entity encoding.
+### Feature 2: Automated Bug Bounty Policy Triage
+Bug bounty researchers frequently waste time on non-qualifying informational alerts. VulnHunter OS introduces an automated triage analyzer:
+- **Eligible vs. Ineligible Filter**:
+  - Separates remunerable findings (BOLA/IDOR, sensitive file leaks, permissive CORS with credentials, unencoded reflection) from typical out-of-scope items (missing SPF/DMARC, standard rate-limiting headers, generic banner disclosure).
+- **Vulnerability Chaining Synthesizer**:
+  - Automatically correlates complementary findings into a higher-severity exploit narrative:
+    - *Chain Example*: `Permissive CORS Origin Reflection` + `Missing SameSite Cookie Attribute` = High-Severity Cross-Origin Session Hijacking Narrative.
 
-### Step 3: Dual Report Generators
-Implement two distinct reporting formats in the Python CLI and web API:
-1. **Bug Bounty Submission Report (`<target>_bounty_report.md`)**:
-   - Formatted specifically for submission on HackerOne or Bugcrowd.
-   - Includes CVSS v3.1 calculation, CWE identifier, impact analysis, exact `curl` reproduction command, and redacted proof.
-2. **Enterprise Security Audit Report (`<target>_executive_audit.md`)**:
-   - Includes executive summary table, compliance breakdown, risk level charts, and web server configuration patches (Nginx/Apache snippets).
+### Feature 3: Interactive Report Builder UI (`src/components/ReportsTab.tsx`)
+- **Live Template Switcher**:
+  - Toggle between **HackerOne Bug Bounty**, **Bugcrowd VRT**, **Corporate Audit**, and **SARIF / JSON**.
+- **Interactive CVSS v3.1 Calculator**:
+  - Interactive radio buttons for Attack Vector (`AV`), Complexity (`AC`), Privileges (`PR`), User Interaction (`UI`), Scope (`S`), Confidentiality (`C`), Integrity (`I`), Availability (`A`).
+  - Automatically computes the base score and generates the standard vector string.
+- **One-Click Section Clipboard**:
+  - Dedicated copy buttons for:
+    - `Copy Title`
+    - `Copy Steps to Reproduce`
+    - `Copy Impact Analysis`
+    - `Copy Remediation`
+    - `Copy Full Markdown`
 
-### Step 4: Unified Command Syntax
-Provide one-line simplicity in Termux:
-```bash
-# Automatic comprehensive audit of a bare domain
-python3 vulnhunter.py auto target.com
-
-# Automatic deep audit of a specific endpoint URL
-python3 vulnhunter.py auto "https://target.com/api/search?q=test"
-
-# Explicit report format selection
-python3 vulnhunter.py auto target.com --format bounty    # HackerOne style
-python3 vulnhunter.py auto target.com --format enterprise # Corporate style
-python3 vulnhunter.py auto target.com --format both       # Generates both reports
-```
+### Feature 4: Multi-Method Reproduction Generator
+For every confirmed vulnerability, the system automatically builds:
+1. **cURL Command**: Pre-configured with method, headers, and target parameters.
+2. **Raw HTTP/1.1 Text**: Standard wire representation ready for Burp Suite Repeater or the built-in Repeater.
+3. **Python 3 Script**: Self-contained script using only standard library `urllib.request` that executes the test and prints status.
 
 ---
 
-## 4. Testing & Verification Plan
+## 3. Implementation Sequence
 
-1. **Automated Unit Testing**:
-   - Run `python3 tests/test_vulnhunter.py -v` to verify scope validation, SSRF blocking, redaction, positive exposure detection, and negative control baseline (zero false positives on hardened fixture).
-2. **End-to-End Real Target Verification**:
-   - Run `python3 vulnhunter.py auto localhost:3000/api/lab/headers --format both`
-   - Verify that:
-     - Target is auto-authorized.
-     - Both Stage 1 (Exposure) and Stage 2 (Deep Heuristics) execute cleanly.
-     - Both `bounty_report.md` and `enterprise_audit.md` are generated with valid reproduction commands and sanitized evidence.
-3. **Web Dashboard Integration**:
-   - Ensure the React mobile dashboard displays the findings with filtering, status toggling, and instant download buttons.
+### Phase 1: Interactive Report Builder & CVSS Calculator
+- Upgrade `src/components/ReportsTab.tsx` with:
+  - Interactive CVSS v3.1 metric sliders and real-time score calculator.
+  - Template selector (HackerOne, Bugcrowd, Corporate, JSON).
+  - Multi-method reproduction view (cURL, Raw HTTP, Python script).
+  - One-click copy buttons for HackerOne submission fields.
+
+### Phase 2: Enhanced Backend Report Generator (`backend/report_generator.ts`)
+- Implement HackerOne, Bugcrowd VRT, and SARIF JSON generation.
+- Implement vulnerability chaining correlation logic.
+- Implement CVSS v3.1 numerical scoring algorithm.
+
+### Phase 3: Termux OS Engine Upgrades (`vulnhunter.py`)
+- Add Termux:API alert hooks (`termux-notification`).
+- Add adaptive rate-limiting and jitter.
+- Add CLI multi-format reporting options:
+  `python3 vulnhunter.py auto target.com --format hackerone --output h1_report.md`
+  `python3 vulnhunter.py auto target.com --format bugcrowd --output bc_report.md`
+
+### Phase 4: Verification & Automated Tests
+- Run `tests/test_vulnhunter.py` to verify:
+  - Scope gate and SSRF defense.
+  - Multi-method reproduction string generation.
+  - CVSS calculation accuracy.
+  - Bug bounty report generation without credentials.

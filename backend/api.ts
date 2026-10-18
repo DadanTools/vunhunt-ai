@@ -30,7 +30,16 @@ import {
   getProxyStatus, 
   executeRepeaterRequest 
 } from './proxy_repeater.js';
-import { generateReportData, generateMarkdownReport } from './report_generator.js';
+import { 
+  generateReportData, 
+  generateMarkdownReport, 
+  generateHackerOneReport, 
+  generateBugcrowdReport, 
+  generateEnterpriseReport, 
+  generateSarifReport, 
+  calculateCvss, 
+  CvssMetrics 
+} from './report_generator.js';
 import { testLabRouter } from './test_lab.js';
 
 export const apiRouter = Router();
@@ -445,7 +454,7 @@ apiRouter.post('/proxy/replay', async (req: Request, res: Response) => {
   }
 });
 
-// 9. Report Export
+// 9. Multi-Format Report Export & Builder Routes
 apiRouter.get('/reports/data', (_req: Request, res: Response) => {
   const data = generateReportData();
   res.json(data);
@@ -456,6 +465,72 @@ apiRouter.get('/reports/markdown', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="vulnhunter-assessment-report.md"');
   res.send(md);
+});
+
+apiRouter.get('/reports/hackerone', (req: Request, res: Response) => {
+  const findingId = req.query.findingId as string | undefined;
+  const md = generateHackerOneReport(findingId);
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="hackerone-bug-report.md"');
+  res.send(md);
+});
+
+apiRouter.get('/reports/bugcrowd', (_req: Request, res: Response) => {
+  const md = generateBugcrowdReport();
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="bugcrowd-vrt-report.md"');
+  res.send(md);
+});
+
+apiRouter.get('/reports/enterprise', (_req: Request, res: Response) => {
+  const md = generateEnterpriseReport();
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="enterprise-security-audit.md"');
+  res.send(md);
+});
+
+apiRouter.get('/reports/sarif', (_req: Request, res: Response) => {
+  const sarif = generateSarifReport();
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="vulnhunter-results.sarif"');
+  res.json(sarif);
+});
+
+apiRouter.get('/reports/preview', (req: Request, res: Response) => {
+  const format = (req.query.format as string) || 'hackerone';
+  const findingId = req.query.findingId as string | undefined;
+
+  let content = '';
+  if (format === 'hackerone') {
+    content = generateHackerOneReport(findingId);
+  } else if (format === 'bugcrowd') {
+    content = generateBugcrowdReport();
+  } else if (format === 'enterprise') {
+    content = generateEnterpriseReport();
+  } else if (format === 'sarif') {
+    content = JSON.stringify(generateSarifReport(), null, 2);
+  } else {
+    content = JSON.stringify(generateReportData(), null, 2);
+  }
+
+  res.json({ format, content });
+});
+
+// CVSS v3.1 Dynamic Calculator Endpoint
+apiRouter.post('/cvss/calculate', (req: Request, res: Response) => {
+  const metrics: CvssMetrics = {
+    av: req.body.av || 'N',
+    ac: req.body.ac || 'L',
+    pr: req.body.pr || 'N',
+    ui: req.body.ui || 'N',
+    s: req.body.s || 'U',
+    c: req.body.c || 'N',
+    i: req.body.i || 'L',
+    a: req.body.a || 'N'
+  };
+
+  const result = calculateCvss(metrics);
+  res.json(result);
 });
 
 // 10. Audit Trail
