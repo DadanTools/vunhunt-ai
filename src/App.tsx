@@ -293,6 +293,7 @@ export default function App() {
                 scopes={scopes}
                 scans={scans}
                 findings={findings}
+                assets={assets}
                 tools={tools}
                 emergencyStop={emergencyStop}
                 onNavigate={setActiveTab}
@@ -316,6 +317,7 @@ export default function App() {
               <AssetsTab
                 assets={assets}
                 scopes={scopes}
+                findings={findings}
                 tools={tools}
                 onImportAssets={handleImportAssets}
                 onRunSubfinder={handleRunSubfinder}

@@ -17,7 +17,9 @@ import {
   runExposureScan, 
   runInjectionHeuristicScan, 
   runIdorComparison, 
-  safeHttpRequest 
+  safeHttpRequest,
+  runReconDiscovery,
+  runPathFuzzer
 } from './scanner_engine.js';
 import { 
   getSystemToolHealth, 
@@ -330,6 +332,36 @@ apiRouter.post('/scans/:id/cancel', (req: Request, res: Response) => {
   db.prepare("UPDATE scans SET status = 'cancelled', error_message = 'Cancelled by user' WHERE id = ?").run(id);
   logAudit('SCAN_CANCEL', scan.target, `User cancelled scan ${id}`, 'warning');
   res.json({ success: true, message: `Scan ${id} cancelled.` });
+});
+
+// Live Target Reconnaissance (DNS, SSL/TLS, Tech Stack & Security Headers Grade)
+apiRouter.post('/recon/live', async (req: Request, res: Response) => {
+  const { target } = req.body;
+  if (!target) {
+    res.status(400).json({ error: 'Target URL is required' });
+    return;
+  }
+  try {
+    const result = await runReconDiscovery(target);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Real Rate-Limited Endpoint & Hidden File Fuzzer
+apiRouter.post('/fuzzer/run', async (req: Request, res: Response) => {
+  const { target, customPaths } = req.body;
+  if (!target) {
+    res.status(400).json({ error: 'Target URL is required' });
+    return;
+  }
+  try {
+    const results = await runPathFuzzer(target, customPaths);
+    res.json({ success: true, results });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // 6. Findings Management

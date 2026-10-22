@@ -15,6 +15,8 @@ import time
 import socket
 import ssl
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+import urllib.request
+import urllib.error
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -579,7 +581,7 @@ def run_exposure_audit(target_url: str) -> List[Dict[str, Any]]:
     conn.commit()
     conn.close()
 
-    log_audit("SCAN_COMPLETE_EXPOSURE", target_url, f"Completed exposure scan: {len(findings)} findings recorded")
+    log_audit("SCAN_COMPLETE", target_url, f"Completed exposure scan: {len(findings)} findings recorded")
     return findings
 
 def run_deep_heuristics_audit(target_url: str) -> List[Dict[str, Any]]:
@@ -931,6 +933,14 @@ def main():
     # Command: REPORT (Print findings summary)
     subparsers.add_parser("report", help="Print security assessment summary")
 
+    # Command: RECON (DNS, SSL, Tech Stack)
+    recon_p = subparsers.add_parser("recon", help="Run DNS, SSL certificate, and technology reconnaissance")
+    recon_p.add_argument("target", help="Target domain (e.g. example.com)")
+
+    # Command: FUZZ (Path discovery)
+    fuzz_p = subparsers.add_parser("fuzz", help="Run rate-limited endpoint & route fuzzing")
+    fuzz_p.add_argument("target", help="Target URL (e.g. https://target.com)")
+
     args = parser.parse_args()
     init_db()
 
@@ -1069,6 +1079,95 @@ def main():
         for f in findings:
             print(f"- [{f['severity'].upper()}] {f['title']} ({f['verification_status']})")
         print("========================================================\n")
+
+    elif args.command == "recon":
+        parsed = urlparse(args.target if "://" in args.target else f"https://{args.target}")
+        host = parsed.hostname or args.target
+        print(f"\n{Colors.HEADER}======================================================================{Colors.ENDC}")
+        print(f"{Colors.CYAN}{Colors.BOLD}             VULNHUNTER AI - LIVE TARGET RECONNAISSANCE              {Colors.ENDC}")
+        print(f"{Colors.HEADER}======================================================================{Colors.ENDC}")
+        print(f"{Colors.BLUE}[*] Target Host:{Colors.ENDC} {host}")
+
+        # DNS
+        try:
+            ips = socket.gethostbyname_ex(host)[2]
+            print(f"{Colors.GREEN}[+] DNS A Records (IPv4):{Colors.ENDC} {', '.join(ips)}")
+        except Exception as e:
+            print(f"{Colors.WARNING}[-] DNS lookup notice: {e}{Colors.ENDC}")
+
+        # SSL Inspection
+        try:
+            ctx = ssl.create_default_context()
+            with socket.create_connection((host, 443), timeout=4) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                    cert = ssock.getpeercert()
+                    cipher = ssock.cipher()
+                    version = ssock.version()
+                    issuer = dict(x[0] for x in cert.get("issuer", []))
+                    sans = [v for (k, v) in cert.get("subjectAltName", []) if k == "DNS"]
+                    print(f"{Colors.GREEN}[+] SSL/TLS Version:{Colors.ENDC} {version} ({cipher[0]})")
+                    print(f"{Colors.GREEN}[+] Certificate Issuer:{Colors.ENDC} {issuer.get('organizationName') or issuer.get('commonName')}")
+                    print(f"{Colors.GREEN}[+] Certificate Expiry:{Colors.ENDC} {cert.get('notAfter')}")
+                    if sans:
+                        print(f"{Colors.CYAN}[+] Discovered SAN Subdomains ({len(sans)}):{Colors.ENDC} {', '.join(sans[:8])}{' ...' if len(sans) > 8 else ''}")
+        except Exception as e:
+            print(f"{Colors.WARNING}[-] SSL inspection notice (Port 443): {e}{Colors.ENDC}")
+
+        # HTTP Probe & Headers
+        try:
+            url = f"https://{host}"
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={"User-Agent": "VulnHunter-Recon/1.0"})
+            with urllib.request.urlopen(req, timeout=5, context=ctx) as res:
+                headers = dict(res.headers)
+                server = headers.get("server") or headers.get("Server")
+                x_powered = headers.get("x-powered-by") or headers.get("X-Powered-By")
+                print(f"{Colors.GREEN}[+] Server Header:{Colors.ENDC} {server or 'Suppressed'}")
+                if x_powered:
+                    print(f"{Colors.GREEN}[+] Technology Framework:{Colors.ENDC} {x_powered}")
+                csp = headers.get("content-security-policy")
+                hsts = headers.get("strict-transport-security")
+                xfo = headers.get("x-frame-options")
+                print(f"{Colors.BLUE}[*] Defense Checklist:{Colors.ENDC} CSP={'YES' if csp else 'MISSING'}, HSTS={'YES' if hsts else 'MISSING'}, XFO={'YES' if xfo else 'MISSING'}")
+        except Exception:
+            pass
+        print(f"\n{Colors.GREEN}[*] Recon completed.{Colors.ENDC}\n")
+
+    elif args.command == "fuzz":
+        parsed = urlparse(args.target if "://" in args.target else f"https://{args.target}")
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        print(f"\n{Colors.HEADER}======================================================================{Colors.ENDC}")
+        print(f"{Colors.CYAN}{Colors.BOLD}             VULNHUNTER AI - RATE-LIMITED ROUTE FUZZER               {Colors.ENDC}")
+        print(f"{Colors.HEADER}======================================================================{Colors.ENDC}")
+        print(f"{Colors.BLUE}[*] Base URL:{Colors.ENDC} {base_url}")
+
+        paths = [
+            "/.env", "/.git/config", "/robots.txt", "/sitemap.xml", "/.well-known/security.txt",
+            "/swagger.json", "/openapi.json", "/api/v1/users", "/graphql", "/admin", "/login"
+        ]
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        for p in paths:
+            url = f"{base_url}{p}"
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "VulnHunter-Fuzzer/1.0"})
+                with urllib.request.urlopen(req, timeout=4, context=ctx) as res:
+                    status = res.status
+                    length = len(res.read(1024))
+                    color = Colors.GREEN if status == 200 else Colors.CYAN
+                    print(f" {color}[{status:3d}]{Colors.ENDC} {p:<25s} Length: {length} B")
+            except urllib.error.HTTPError as e:
+                color = Colors.WARNING if e.code == 403 else Colors.ENDC
+                print(f" {color}[{e.code:3d}]{Colors.ENDC} {p:<25s}")
+            except Exception:
+                pass
+            time.sleep(0.12)
+        print(f"\n{Colors.GREEN}[*] Route fuzzing completed.{Colors.ENDC}\n")
+
     else:
         parser.print_help()
 

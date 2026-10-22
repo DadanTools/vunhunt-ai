@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   ShieldCheck, 
   AlertTriangle, 
@@ -11,18 +11,25 @@ import {
   FileText, 
   Layers, 
   Clock, 
-  CheckCircle,
-  XCircle,
-  AlertOctagon,
-  ArrowLeftRight
+  CheckCircle, 
+  XCircle, 
+  AlertOctagon, 
+  ArrowLeftRight,
+  Network,
+  Flame,
+  Activity,
+  Target
 } from 'lucide-react';
-import { ScopeRule, ScanJob, Finding, ToolHealth } from '../types.ts';
+import { ScopeRule, ScanJob, Finding, ToolHealth, Asset } from '../types.ts';
 import { TabId } from './BottomNav.tsx';
+import { VulnerabilityHeatmap } from './VulnerabilityHeatmap.tsx';
+import { AttackSurfaceGraph } from './AttackSurfaceGraph.tsx';
 
 interface OverviewTabProps {
   scopes: ScopeRule[];
   scans: ScanJob[];
   findings: Finding[];
+  assets: Asset[];
   tools: Record<string, ToolHealth>;
   emergencyStop: boolean;
   onNavigate: (tab: TabId) => void;
@@ -34,12 +41,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   scopes,
   scans,
   findings,
+  assets,
   tools,
   emergencyStop,
   onNavigate,
   onQuickScan,
   onCancelScan
 }) => {
+  const [activeVisual, setActiveVisual] = useState<'heatmap' | 'attack_surface'>('heatmap');
   const activeScopes = scopes.filter(s => s.is_active === 1);
   const activeScans = scans.filter(s => s.status === 'running' || s.status === 'queued');
 
@@ -60,33 +69,31 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-600/70 text-rose-200 flex items-start gap-3 animate-pulse">
           <AlertOctagon className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
           <div className="text-xs">
-            <p className="font-bold font-mono-code text-white">EMERGENCY STOP IS ENGAGED</p>
-            <p className="mt-0.5 text-rose-300">
-              All active security scans have been cancelled and outgoing HTTP requests are locked. Use the button in the top navigation bar to disengage when safe.
-            </p>
+            <span className="font-bold uppercase tracking-wider block text-rose-300">
+              Emergency Killswitch Activated
+            </span>
+            <span>All outgoing network traffic, proxy repeaters, and scanner engines are strictly disabled.</span>
           </div>
         </div>
       ) : activeScopes.length === 0 ? (
-        <div className="p-3.5 rounded-xl bg-amber-950/60 border border-amber-600/60 text-amber-200 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-xs flex-1">
-            <p className="font-bold font-mono-code text-white">NO TARGETS IN AUTHORIZED SCOPE</p>
-            <p className="mt-0.5 text-amber-300">
-              Active testing is restricted until you configure an authorized domain or host in Scope Gate.
-            </p>
-            <button
-              onClick={() => onNavigate('scope')}
-              className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-mono-code text-[11px] font-semibold"
-            >
-              Configure Scope Gate <ArrowRight className="w-3 h-3" />
-            </button>
+        <div className="p-3.5 rounded-xl bg-amber-950/60 border border-amber-600/60 text-amber-200 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Scope Gate Empty: You must authorize a test target before scanning.</span>
           </div>
+          <button
+            onClick={() => onNavigate('scope')}
+            className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-mono-code text-[11px] shrink-0"
+          >
+            Configure Scope
+          </button>
         </div>
       ) : (
-        <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between gap-3 text-xs">
+        <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span className="font-mono-code text-emerald-300 font-semibold">Scope Gate Active</span>
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-semibold">Scope Gate Active:</span>
+            <span className="text-[11px] text-slate-400 font-mono-code">{activeScopes.length} targets locked</span>
           </div>
           <span className="text-[11px] text-slate-400 font-mono-code truncate max-w-[200px]">
             {activeScopes.map(s => s.target).join(', ')}
@@ -127,17 +134,17 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
 
         <div 
-          onClick={() => onNavigate('scanners')}
+          onClick={() => onNavigate('assets')}
           className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 cursor-pointer transition-all"
         >
           <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Active Jobs</span>
-            <Clock className="w-4 h-4 text-cyan-400" />
+            <span>Attack Surface</span>
+            <Network className="w-4 h-4 text-cyan-400" />
           </div>
           <div className="mt-2 font-mono-code text-2xl font-bold text-white">
-            {activeScans.length}
+            {assets.length || activeScopes.length}
           </div>
-          <div className="mt-1 text-[10px] text-slate-400">Running / queued</div>
+          <div className="mt-1 text-[10px] text-slate-400">Hosts & Subdomains</div>
         </div>
 
         <div 
@@ -196,6 +203,46 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       </div>
 
+      {/* D3.js Visual Analytics Segmented Switcher */}
+      <div className="space-y-3">
+        <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800 text-xs font-mono-code">
+          <button
+            onClick={() => setActiveVisual('heatmap')}
+            className={`flex-1 py-1.5 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
+              activeVisual === 'heatmap' ? 'bg-slate-800 text-rose-400 shadow-sm' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5 text-rose-400" />
+            <span>Vulnerability Heatmap (D3)</span>
+          </button>
+          <button
+            onClick={() => setActiveVisual('attack_surface')}
+            className={`flex-1 py-1.5 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
+              activeVisual === 'attack_surface' ? 'bg-slate-800 text-cyan-400 shadow-sm' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Network className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Attack Surface & Exploit Chains (D3)</span>
+          </button>
+        </div>
+
+        {activeVisual === 'heatmap' ? (
+          <VulnerabilityHeatmap
+            findings={findings}
+            scopes={scopes}
+            onSelectFindingFilter={(_category, _asset) => {
+              onNavigate('findings');
+            }}
+          />
+        ) : (
+          <AttackSurfaceGraph
+            assets={assets}
+            findings={findings}
+            scopes={scopes}
+          />
+        )}
+      </div>
+
       {/* Active Jobs Section */}
       {activeScans.length > 0 && (
         <div className="p-3.5 rounded-xl bg-slate-900 border border-cyan-500/40">
@@ -228,101 +275,81 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   </div>
                   <span className="font-mono-code text-[10px] text-cyan-400">{scan.progress}%</span>
                 </div>
-                <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 font-mono-code">
-                  <span>Type: {scan.scan_type}</span>
-                  <span>Status: {scan.status}</span>
-                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Quick Launchpad Buttons */}
-      <div className="space-y-2">
-        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono-code">
-          Quick Launchpad
-        </h3>
-        <div className="grid grid-cols-2 gap-2">
+      {/* Fast Action Quick Launchers */}
+      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-white font-mono-code uppercase">Quick Security Actions</span>
+          <span className="text-[10px] text-slate-500 font-mono-code">Deterministic modules</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             onClick={() => onQuickScan(defaultTarget, 'exposure')}
             disabled={emergencyStop || activeScopes.length === 0}
-            className="p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 hover:bg-slate-850 text-left transition-all disabled:opacity-50 disabled:pointer-events-none group"
+            className="p-3 rounded-lg bg-slate-950 border border-slate-800 hover:border-emerald-500/60 text-left transition-all group disabled:opacity-50"
           >
-            <div className="w-8 h-8 rounded-lg bg-emerald-950/80 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-2 group-hover:scale-105 transition-transform">
-              <Play className="w-4 h-4 fill-emerald-400" />
+            <div className="flex items-center justify-between text-emerald-400 mb-1">
+              <span className="font-mono-code text-xs font-semibold flex items-center gap-1.5">
+                <Play className="w-3.5 h-3.5 fill-current" /> Fast Exposure Audit
+              </span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
             </div>
-            <div className="text-xs font-semibold text-white">Fast Exposure Scan</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Headers, TLS, paths</div>
+            <p className="text-[11px] text-slate-400">
+              Scans target headers, cookies, and sensitive dotfile exposures.
+            </p>
           </button>
 
           <button
-            onClick={() => onNavigate('lab')}
-            className="p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-850 text-left transition-all group"
+            onClick={() => onQuickScan(defaultTarget, 'heuristics')}
+            disabled={emergencyStop || activeScopes.length === 0}
+            className="p-3 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/60 text-left transition-all group disabled:opacity-50"
           >
-            <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-2 group-hover:scale-105 transition-transform">
-              <FlaskConical className="w-4 h-4" />
+            <div className="flex items-center justify-between text-cyan-400 mb-1">
+              <span className="font-mono-code text-xs font-semibold flex items-center gap-1.5">
+                <FlaskConical className="w-3.5 h-3.5" /> Canary & CORS Probe
+              </span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
             </div>
-            <div className="text-xs font-semibold text-white">Local Test Lab</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Zero-risk test fixtures</div>
+            <p className="text-[11px] text-slate-400">
+              Safe canary reflection tests and cross-origin origin trust validation.
+            </p>
           </button>
 
           <button
             onClick={() => onNavigate('proxy')}
-            className="p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-purple-500/50 hover:bg-slate-850 text-left transition-all group"
+            className="p-3 rounded-lg bg-slate-950 border border-slate-800 hover:border-purple-500/60 text-left transition-all group"
           >
-            <div className="w-8 h-8 rounded-lg bg-purple-950/80 border border-purple-500/30 flex items-center justify-center text-purple-400 mb-2 group-hover:scale-105 transition-transform">
-              <ArrowLeftRight className="w-4 h-4" />
+            <div className="flex items-center justify-between text-purple-400 mb-1">
+              <span className="font-mono-code text-xs font-semibold flex items-center gap-1.5">
+                <ArrowLeftRight className="w-3.5 h-3.5" /> Proxy Repeater
+              </span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
             </div>
-            <div className="text-xs font-semibold text-white">Proxy & Repeater</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Burp-style HTTP replay</div>
+            <p className="text-[11px] text-slate-400">
+              Intercept, modify, and replay HTTP requests with raw byte view.
+            </p>
           </button>
 
           <button
             onClick={() => onNavigate('reports')}
-            className="p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-850 text-left transition-all group"
+            className="p-3 rounded-lg bg-slate-950 border border-slate-800 hover:border-blue-500/60 text-left transition-all group"
           >
-            <div className="w-8 h-8 rounded-lg bg-amber-950/80 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-2 group-hover:scale-105 transition-transform">
-              <FileText className="w-4 h-4" />
+            <div className="flex items-center justify-between text-blue-400 mb-1">
+              <span className="font-mono-code text-xs font-semibold flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" /> Report Center
+              </span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
             </div>
-            <div className="text-xs font-semibold text-white">Export Report</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">JSON & Markdown</div>
+            <p className="text-[11px] text-slate-400">
+              Generate HackerOne, Bugcrowd, ISO audit, and SARIF exports.
+            </p>
           </button>
-        </div>
-      </div>
-
-      {/* Module Navigation Grid */}
-      <div className="space-y-2 pt-2">
-        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono-code">
-          Security Modules
-        </h3>
-        <div className="space-y-1.5">
-          {[
-            { id: 'assets' as TabId, label: 'Asset Discovery & Subfinder', desc: 'Passive import, DNS resolve, HTTP probing', icon: Globe },
-            { id: 'idor' as TabId, label: 'Auth & IDOR / BOLA Workbench', desc: 'Dual-tenant token comparison on object fixtures', icon: Layers },
-            { id: 'templates' as TabId, label: 'Known CVE / Nuclei Engine', desc: 'Safe template runner with controlled rate limits', icon: Terminal },
-            { id: 'tools' as TabId, label: 'Tool Health & Local Audit Trail', desc: 'Subfinder/Nuclei status & immutable audit log', icon: Clock }
-          ].map(item => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                className="w-full p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 hover:bg-slate-900 flex items-center justify-between text-left transition-all"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-slate-200 truncate">{item.label}</div>
-                    <div className="text-[10px] text-slate-400 truncate">{item.desc}</div>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
-              </button>
-            );
-          })}
         </div>
       </div>
     </div>

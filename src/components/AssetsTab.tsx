@@ -9,13 +9,16 @@ import {
   CheckCircle, 
   ExternalLink,
   Plus,
-  Terminal
+  Terminal,
+  Network
 } from 'lucide-react';
-import { Asset, ToolHealth, ScopeRule } from '../types.ts';
+import { Asset, ToolHealth, ScopeRule, Finding } from '../types.ts';
+import { AttackSurfaceGraph } from './AttackSurfaceGraph.tsx';
 
 interface AssetsTabProps {
   assets: Asset[];
   scopes: ScopeRule[];
+  findings: Finding[];
   tools: Record<string, ToolHealth>;
   onImportAssets: (entries: string[], provenance: string) => Promise<void>;
   onRunSubfinder: (domain: string) => Promise<any>;
@@ -25,12 +28,13 @@ interface AssetsTabProps {
 export const AssetsTab: React.FC<AssetsTabProps> = ({
   assets,
   scopes,
+  findings,
   tools,
   onImportAssets,
   onRunSubfinder,
   onProbeAsset
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'inventory' | 'import' | 'subfinder'>('inventory');
+  const [activeSubTab, setActiveSubTab] = useState<'inventory' | 'attack_surface' | 'import' | 'subfinder'>('inventory');
   const [manualText, setManualText] = useState('');
   const [subfinderDomain, setSubfinderDomain] = useState('');
   const [isImporting, setIsImporting] = useState(false);
@@ -115,6 +119,15 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
           Inventory ({assets.length})
         </button>
         <button
+          onClick={() => setActiveSubTab('attack_surface')}
+          className={`flex-1 py-1.5 rounded-lg font-semibold transition-all flex items-center justify-center gap-1 ${
+            activeSubTab === 'attack_surface' ? 'bg-slate-800 text-cyan-400' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Network className="w-3 h-3 text-cyan-400" />
+          Attack Graph (D3)
+        </button>
+        <button
           onClick={() => setActiveSubTab('import')}
           className={`flex-1 py-1.5 rounded-lg font-semibold transition-all ${
             activeSubTab === 'import' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
@@ -139,6 +152,15 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
         }`}>
           {statusMessage.msg}
         </div>
+      )}
+
+      {/* Subtab: Attack Surface Graph */}
+      {activeSubTab === 'attack_surface' && (
+        <AttackSurfaceGraph
+          assets={assets}
+          findings={findings}
+          scopes={scopes}
+        />
       )}
 
       {/* Subtab 1: Inventory */}

@@ -6,6 +6,8 @@
 import http from 'node:http';
 import https from 'node:https';
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
+import tls from 'node:tls';
 import { db } from './db.js';
 import { validateScope, logAudit, isEmergencyStopActive } from './scope_gate.js';
 import { redactHeaders, redactBody, sanitizeString } from './redactor.js';
@@ -635,3 +637,414 @@ export async function runIdorComparison(
 
   return { finding, comparisonSummary };
 }
+
+export interface ReconResult {
+  host: string;
+  targetUrl: string;
+  dns: {
+    a: string[];
+    aaaa: string[];
+    mx: Array<{ exchange: string; priority: number }>;
+    txt: string[];
+    cname: string[];
+    ns: string[];
+  };
+  tls?: {
+    authorized: boolean;
+    protocol: string;
+    cipher: string;
+    issuer: string;
+    validFrom: string;
+    validTo: string;
+    daysRemaining: number;
+    sans: string[];
+  };
+  technologies: Array<{ name: string; category: string; evidence: string }>;
+  securityHeadersGrade: {
+    grade: 'A+' | 'A' | 'B' | 'C' | 'D' | 'F';
+    score: number;
+    checks: Array<{ header: string; status: 'present' | 'missing' | 'warning'; details: string }>;
+  };
+}
+
+/**
+ * Real Live Target Reconnaissance:
+ * - DNS queries (A, AAAA, MX, TXT, CNAME, NS)
+ * - SSL/TLS Certificate inspection & Subject Alternative Names (SANs) subdomain leakage
+ * - Technology fingerprinting & Mozilla Observatory Security Headers Grade
+ */
+export async function runReconDiscovery(targetUrl: string): Promise<ReconResult> {
+  const scope = await validateScope(targetUrl);
+  if (!scope.authorized) {
+    throw new Error(`Scope Gate Violation: Target ${targetUrl} is not in authorized scope (${scope.reason})`);
+  }
+
+  const normalizedUrl = (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))
+    ? targetUrl
+    : (targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1') ? `http://${targetUrl}` : `https://${targetUrl}`);
+
+  const parsed = new URL(normalizedUrl);
+  const host = parsed.hostname;
+  const isHttps = parsed.protocol === 'https:';
+
+  logAudit('RECON_DISCOVERY_START', host, `Initiated live DNS, SSL, and technology reconnaissance on ${host}`, 'info');
+
+  // 1. Live DNS Queries
+  const dnsData = {
+    a: [] as string[],
+    aaaa: [] as string[],
+    mx: [] as Array<{ exchange: string; priority: number }>,
+    txt: [] as string[],
+    cname: [] as string[],
+    ns: [] as string[]
+  };
+
+  try { dnsData.a = await dns.resolve4(host); } catch {}
+  try { dnsData.aaaa = await dns.resolve6(host); } catch {}
+  try { dnsData.mx = await dns.resolveMx(host); } catch {}
+  try {
+    const rawTxt = await dns.resolveTxt(host);
+    dnsData.txt = rawTxt.map(t => t.join(''));
+  } catch {}
+  try { dnsData.cname = await dns.resolveCname(host); } catch {}
+  try { dnsData.ns = await dns.resolveNs(host); } catch {}
+
+  // 2. Real SSL/TLS Certificate Inspection (if port 443 / HTTPS)
+  let tlsInfo: ReconResult['tls'] | undefined;
+  if (isHttps || (!parsed.port || parsed.port === '443')) {
+    try {
+      tlsInfo = await new Promise((resolve) => {
+        const socket = tls.connect({
+          host,
+          port: parsed.port ? parseInt(parsed.port, 10) : 443,
+          servername: host,
+          rejectUnauthorized: false,
+          timeout: 4000
+        }, () => {
+          const cert = socket.getPeerCertificate(true);
+          const cipher = socket.getCipher();
+          const protocol = socket.getProtocol();
+
+          if (cert && cert.subject) {
+            const validTo = new Date(cert.valid_to);
+            const daysRemaining = Math.max(0, Math.round((validTo.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+            const sans = cert.subjectaltname 
+              ? cert.subjectaltname.split(', ').map(s => s.replace(/^DNS:/, ''))
+              : [];
+
+            const issuerRaw = cert.issuer?.O || cert.issuer?.CN || 'Unknown CA';
+            const issuerStr = Array.isArray(issuerRaw) ? issuerRaw[0] : String(issuerRaw);
+
+            socket.end();
+            resolve({
+              authorized: socket.authorized,
+              protocol: protocol || 'TLSv1.3',
+              cipher: cipher ? cipher.name : 'Unknown',
+              issuer: issuerStr,
+              validFrom: cert.valid_from,
+              validTo: cert.valid_to,
+              daysRemaining,
+              sans
+            });
+          } else {
+            socket.end();
+            resolve(undefined);
+          }
+        });
+
+        socket.on('error', () => resolve(undefined));
+        socket.on('timeout', () => {
+          socket.destroy();
+          resolve(undefined);
+        });
+      });
+    } catch {}
+  }
+
+  // 3. HTTP Probe for Technology Fingerprinting & Security Headers Grade
+  const probeResponse = await safeHttpRequest(targetUrl, { followRedirects: true, timeoutMs: 6000 });
+  const headers = probeResponse.headers;
+  const headerKeys: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    headerKeys[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : v;
+  }
+  const body = probeResponse.body;
+
+  // Technology Fingerprints
+  const technologies: ReconResult['technologies'] = [];
+
+  // Web Server / CDN
+  const server = headerKeys['server'] || '';
+  const xPoweredBy = headerKeys['x-powered-by'] || '';
+  const cfRay = headerKeys['cf-ray'];
+  const cfCache = headerKeys['cf-cache-status'];
+
+  if (cfRay || cfCache || server.toLowerCase().includes('cloudflare')) {
+    technologies.push({ name: 'Cloudflare CDN / WAF', category: 'CDN & Protection', evidence: cfRay ? `cf-ray: ${cfRay}` : 'Server: cloudflare' });
+  }
+  if (headerKeys['x-amz-cf-id'] || headerKeys['x-amz-request-id']) {
+    technologies.push({ name: 'Amazon CloudFront / AWS', category: 'Cloud Infrastructure', evidence: 'x-amz-* header' });
+  }
+  if (server.toLowerCase().includes('nginx')) {
+    technologies.push({ name: 'Nginx Web Server', category: 'Web Server', evidence: `Server: ${server}` });
+  } else if (server.toLowerCase().includes('apache')) {
+    technologies.push({ name: 'Apache HTTP Server', category: 'Web Server', evidence: `Server: ${server}` });
+  } else if (server.toLowerCase().includes('caddy')) {
+    technologies.push({ name: 'Caddy Server', category: 'Web Server', evidence: `Server: ${server}` });
+  }
+
+  // Application Stack
+  if (xPoweredBy.toLowerCase().includes('express')) {
+    technologies.push({ name: 'Express.js', category: 'Backend Framework', evidence: `X-Powered-By: ${xPoweredBy}` });
+  } else if (xPoweredBy.toLowerCase().includes('php')) {
+    technologies.push({ name: 'PHP Runtime', category: 'Programming Language', evidence: `X-Powered-By: ${xPoweredBy}` });
+  } else if (xPoweredBy.toLowerCase().includes('asp.net')) {
+    technologies.push({ name: 'ASP.NET', category: 'Backend Framework', evidence: `X-Powered-By: ${xPoweredBy}` });
+  }
+
+  // Frontend Heuristics from Body
+  if (body.includes('__NEXT_DATA__') || body.includes('/_next/')) {
+    technologies.push({ name: 'Next.js (React)', category: 'Frontend Framework', evidence: 'next.js runtime markers' });
+  } else if (body.includes('react') || body.includes('data-reactroot')) {
+    technologies.push({ name: 'React.js', category: 'JavaScript UI', evidence: 'react DOM attributes' });
+  }
+  if (body.includes('wp-content') || body.includes('wp-includes')) {
+    technologies.push({ name: 'WordPress CMS', category: 'Content Management', evidence: 'wp-content path' });
+  }
+
+  // 4. Mozilla Observatory-Style Security Header Grade Calculation
+  let score = 100;
+  const checks: ReconResult['securityHeadersGrade']['checks'] = [];
+
+  // Content-Security-Policy (CSP) (-25 if missing)
+  if (headerKeys['content-security-policy']) {
+    checks.push({ header: 'Content-Security-Policy', status: 'present', details: headerKeys['content-security-policy'].slice(0, 80) + '...' });
+  } else {
+    score -= 25;
+    checks.push({ header: 'Content-Security-Policy', status: 'missing', details: 'Missing modern CSP protection against XSS/injections' });
+  }
+
+  // Strict-Transport-Security (HSTS) (-20 if missing on HTTPS)
+  if (isHttps) {
+    if (headerKeys['strict-transport-security']) {
+      checks.push({ header: 'Strict-Transport-Security (HSTS)', status: 'present', details: headerKeys['strict-transport-security'] });
+    } else {
+      score -= 20;
+      checks.push({ header: 'Strict-Transport-Security (HSTS)', status: 'missing', details: 'Missing HSTS enforcement' });
+    }
+  }
+
+  // X-Frame-Options (-15 if missing)
+  if (headerKeys['x-frame-options']) {
+    checks.push({ header: 'X-Frame-Options', status: 'present', details: headerKeys['x-frame-options'] });
+  } else {
+    score -= 15;
+    checks.push({ header: 'X-Frame-Options', status: 'missing', details: 'Missing clickjacking defense' });
+  }
+
+  // X-Content-Type-Options (-10 if missing)
+  if (headerKeys['x-content-type-options']?.toLowerCase().includes('nosniff')) {
+    checks.push({ header: 'X-Content-Type-Options', status: 'present', details: 'nosniff' });
+  } else {
+    score -= 10;
+    checks.push({ header: 'X-Content-Type-Options', status: 'missing', details: 'MIME-type sniffing defense missing' });
+  }
+
+  // Referrer-Policy (-10 if missing)
+  if (headerKeys['referrer-policy']) {
+    checks.push({ header: 'Referrer-Policy', status: 'present', details: headerKeys['referrer-policy'] });
+  } else {
+    score -= 10;
+    checks.push({ header: 'Referrer-Policy', status: 'missing', details: 'Potential referrer leakage on navigation' });
+  }
+
+  // Permissions-Policy (-10 if missing)
+  if (headerKeys['permissions-policy'] || headerKeys['feature-policy']) {
+    checks.push({ header: 'Permissions-Policy', status: 'present', details: 'Configured' });
+  } else {
+    score -= 10;
+    checks.push({ header: 'Permissions-Policy', status: 'missing', details: 'Hardware/sensor API permissions unconstrained' });
+  }
+
+  // Server banner disclosure penalty (-10)
+  if (server && anyDigit(server)) {
+    score -= 10;
+    checks.push({ header: 'Server Banner Disclosed', status: 'warning', details: `Discloses version: ${server}` });
+  }
+
+  score = Math.max(0, score);
+  let grade: ReconResult['securityHeadersGrade']['grade'] = 'F';
+  if (score >= 90) grade = 'A+';
+  else if (score >= 80) grade = 'A';
+  else if (score >= 65) grade = 'B';
+  else if (score >= 50) grade = 'C';
+  else if (score >= 35) grade = 'D';
+
+  logAudit('RECON_DISCOVERY_COMPLETE', host, `Completed recon on ${host}. Score: ${score}/100 (Grade: ${grade})`, 'info');
+
+  return {
+    host,
+    targetUrl,
+    dns: dnsData,
+    tls: tlsInfo,
+    technologies,
+    securityHeadersGrade: {
+      grade,
+      score,
+      checks
+    }
+  };
+}
+
+function anyDigit(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) >= 48 && s.charCodeAt(i) <= 57) return true;
+  }
+  return false;
+}
+
+export interface FuzzResult {
+  path: string;
+  url: string;
+  statusCode: number;
+  statusMessage: string;
+  durationMs: number;
+  contentLength: number;
+  isInteresting: boolean;
+  category: 'sensitive_file' | 'api_route' | 'admin_panel' | 'standard';
+  findingCreated?: boolean;
+}
+
+const COMMON_FUZZ_PATHS = [
+  { path: '/.env', category: 'sensitive_file' as const },
+  { path: '/.git/config', category: 'sensitive_file' as const },
+  { path: '/.git/HEAD', category: 'sensitive_file' as const },
+  { path: '/robots.txt', category: 'standard' as const },
+  { path: '/sitemap.xml', category: 'standard' as const },
+  { path: '/.well-known/security.txt', category: 'standard' as const },
+  { path: '/swagger.json', category: 'api_route' as const },
+  { path: '/openapi.json', category: 'api_route' as const },
+  { path: '/api/v1/users', category: 'api_route' as const },
+  { path: '/api-docs', category: 'api_route' as const },
+  { path: '/graphql', category: 'api_route' as const },
+  { path: '/admin', category: 'admin_panel' as const },
+  { path: '/administrator', category: 'admin_panel' as const },
+  { path: '/login', category: 'admin_panel' as const },
+  { path: '/wp-login.php', category: 'admin_panel' as const },
+  { path: '/actuator/health', category: 'api_route' as const },
+  { path: '/actuator/env', category: 'sensitive_file' as const },
+  { path: '/server-status', category: 'sensitive_file' as const },
+  { path: '/backup.zip', category: 'sensitive_file' as const },
+  { path: '/config.json', category: 'sensitive_file' as const }
+];
+
+/**
+ * Real Rate-Limited Endpoint & Hidden Route Fuzzer:
+ * Checks endpoints politely with 120ms rate-limiting and automatically flags exposed files.
+ */
+export async function runPathFuzzer(targetUrl: string, customPaths?: string[]): Promise<FuzzResult[]> {
+  const scope = await validateScope(targetUrl);
+  if (!scope.authorized) {
+    throw new Error(`Scope Gate Violation: Target ${targetUrl} is not in authorized scope (${scope.reason})`);
+  }
+
+  const normalizedUrl = (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))
+    ? targetUrl
+    : (targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1') ? `http://${targetUrl}` : `https://${targetUrl}`);
+
+  const parsed = new URL(normalizedUrl);
+  const baseUrl = `${parsed.protocol}//${parsed.host}`;
+  const results: FuzzResult[] = [];
+
+  const targets = (customPaths && customPaths.length > 0)
+    ? customPaths.map(p => ({ path: p.startsWith('/') ? p : `/${p}`, category: 'standard' as const }))
+    : COMMON_FUZZ_PATHS;
+
+  logAudit('FUZZER_START', parsed.host, `Initiated rate-limited path fuzzing on ${parsed.host} (${targets.length} routes)`, 'info');
+
+  const scanId = `fuzz-${Date.now()}`;
+  db.prepare('INSERT INTO scans (id, target, scan_type, status, progress, started_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(scanId, baseUrl, 'endpoint_fuzz', 'running', 10, new Date().toISOString());
+
+  for (let i = 0; i < targets.length; i++) {
+    if (isEmergencyStopActive()) {
+      break;
+    }
+
+    const item = targets[i];
+    const probeUrl = `${baseUrl}${item.path}`;
+
+    try {
+      const start = Date.now();
+      const res = await safeHttpRequest(probeUrl, { followRedirects: false, timeoutMs: 4000 });
+      const duration = Date.now() - start;
+
+      const is2xx = res.statusCode >= 200 && res.statusCode < 300;
+      const is3xx = res.statusCode >= 300 && res.statusCode < 400;
+      const is403 = res.statusCode === 403;
+      const isInteresting = is2xx || is3xx || is403;
+
+      let findingCreated = false;
+
+      // Auto-escalate exposed sensitive configuration as confirmed vulnerability
+      if (is2xx && item.category === 'sensitive_file' && res.body.length > 0) {
+        findingCreated = true;
+        persistFinding({
+          scan_id: scanId,
+          title: `Exposed Critical Resource (${item.path})`,
+          category: 'information_disclosure',
+          severity: 'high',
+          confidence: 'certain',
+          affected_asset: parsed.host,
+          endpoint: probeUrl,
+          evidence_json: JSON.stringify({
+            path: item.path,
+            status: res.statusCode,
+            content_sample: redactBody(res.body.slice(0, 500))
+          }),
+          reproduction_steps: `curl -s "${probeUrl}" | head -n 20`,
+          impact: 'Publicly exposes internal server configuration, credentials, or repository metadata.',
+          remediation: 'Restrict access via web server location block (e.g. deny all for dotfiles).',
+          verification_status: 'verified-in-authorized-lab',
+          source_tool: 'path_fuzzer',
+          fingerprint: crypto.createHash('sha256').update(`${parsed.host}:${item.path}`).digest('hex')
+        });
+      }
+
+      results.push({
+        path: item.path,
+        url: probeUrl,
+        statusCode: res.statusCode,
+        statusMessage: res.statusMessage,
+        durationMs: duration,
+        contentLength: res.body.length,
+        isInteresting,
+        category: item.category,
+        findingCreated
+      });
+
+    } catch (err: any) {
+      results.push({
+        path: item.path,
+        url: probeUrl,
+        statusCode: 0,
+        statusMessage: err.message || 'Connection Error',
+        durationMs: 0,
+        contentLength: 0,
+        isInteresting: false,
+        category: item.category
+      });
+    }
+
+    // Polite rate limit jitter (80ms to 150ms)
+    await new Promise(r => setTimeout(r, 80 + Math.floor(Math.random() * 70)));
+  }
+
+  db.prepare('UPDATE scans SET status = ?, progress = 100, completed_at = ? WHERE id = ?')
+    .run('completed', new Date().toISOString(), scanId);
+
+  logAudit('FUZZER_COMPLETE', parsed.host, `Completed path fuzzing on ${parsed.host}. Discovered ${results.filter(r => r.isInteresting).length} active routes.`, 'info');
+
+  return results;
+}
+
