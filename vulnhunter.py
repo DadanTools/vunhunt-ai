@@ -941,6 +941,10 @@ def main():
     fuzz_p = subparsers.add_parser("fuzz", help="Run rate-limited endpoint & route fuzzing")
     fuzz_p.add_argument("target", help="Target URL (e.g. https://target.com)")
 
+    # Command: PERMUTE (Subdomain permutations)
+    permute_p = subparsers.add_parser("permute", help="Generate and resolve subdomain permutations")
+    permute_p.add_argument("domain", help="Target domain (e.g. example.com)")
+
     args = parser.parse_args()
     init_db()
 
@@ -1167,6 +1171,25 @@ def main():
                 pass
             time.sleep(0.12)
         print(f"\n{Colors.GREEN}[*] Route fuzzing completed.{Colors.ENDC}\n")
+
+    elif args.command == "permute":
+        target = args.domain.replace("https://", "").replace("http://", "").split("/")[0].split(":")[0]
+        print(f"\n{Colors.HEADER}======================================================================{Colors.ENDC}")
+        print(f"{Colors.CYAN}{Colors.BOLD}          VULNHUNTER AI - SUBDOMAIN PERMUTATION ENGINE               {Colors.ENDC}")
+        print(f"{Colors.HEADER}======================================================================{Colors.ENDC}")
+        print(f"{Colors.BLUE}[*] Base Domain:{Colors.ENDC} {target}")
+        
+        prefixes = ["api", "dev", "staging", "admin", "auth", "corp", "mail", "internal", "vpn", "portal", "dashboard", "cdn", "app"]
+        active = []
+        for p in prefixes:
+            cand = f"{p}.{target}"
+            try:
+                ip = socket.gethostbyname(cand)
+                print(f" {Colors.GREEN}[+] ACTIVE:{Colors.ENDC} {cand:<30s} -> {ip}")
+                active.append((cand, ip))
+            except socket.gaierror:
+                print(f" {Colors.ENDC}[-] Unresolved: {cand}")
+        print(f"\n{Colors.GREEN}[*] Permutation completed: {len(active)} active hosts discovered.{Colors.ENDC}\n")
 
     else:
         parser.print_help()

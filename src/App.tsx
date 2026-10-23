@@ -17,6 +17,7 @@ import { AuthIdorTab } from './components/AuthIdorTab.tsx';
 import { TemplatesTab } from './components/TemplatesTab.tsx';
 import { ReportsTab } from './components/ReportsTab.tsx';
 import { ToolsAuditTab } from './components/ToolsAuditTab.tsx';
+import { TerminalTab } from './components/TerminalTab.tsx';
 import { ScopeRule, Asset, ScanJob, Finding, ProxyLog, AuditLog, ToolHealth } from './types.ts';
 
 export default function App() {
@@ -300,6 +301,10 @@ export default function App() {
                 onQuickScan={handleStartScan}
                 onCancelScan={handleCancelScan}
               />
+            )}
+
+            {activeTab === 'terminal' && (
+              <TerminalTab scopes={scopes} onNavigateToTab={setActiveTab} />
             )}
 
             {activeTab === 'scope' && (

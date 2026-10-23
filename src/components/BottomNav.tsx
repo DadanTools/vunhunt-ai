@@ -7,11 +7,13 @@ import {
   ArrowLeftRight, 
   FlaskConical, 
   Bug, 
-  Menu
+  Menu,
+  Terminal as TerminalIcon
 } from 'lucide-react';
 
 export type TabId = 
   | 'overview' 
+  | 'terminal'
   | 'scope' 
   | 'assets' 
   | 'scanners' 
@@ -38,6 +40,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 }) => {
   const mainItems: Array<{ id: TabId; label: string; icon: React.FC<{ className?: string }>; badge?: number }> = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'terminal', label: 'Termux', icon: TerminalIcon },
     { id: 'scope', label: 'Scope', icon: ShieldCheck },
     { id: 'scanners', label: 'Scan', icon: Crosshair, badge: activeScansCount },
     { id: 'proxy', label: 'Proxy', icon: ArrowLeftRight },
