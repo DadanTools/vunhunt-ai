@@ -18,7 +18,8 @@ import {
   Network,
   Flame,
   Activity,
-  Target
+  Target,
+  Sparkles
 } from 'lucide-react';
 import { ScopeRule, ScanJob, Finding, ToolHealth, Asset } from '../types.ts';
 import { TabId } from './BottomNav.tsx';
@@ -159,6 +160,33 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             {tools.python?.isAvailable ? 'Python 3 Ready' : 'Node Ready'}
           </div>
           <div className="mt-1 text-[10px] text-slate-400">Termux & CLI native</div>
+        </div>
+      </div>
+
+      {/* #1 AI Bug Hunter Co-Pilot Callout Banner */}
+      <div 
+        onClick={() => onNavigate('copilot')}
+        className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-950 via-slate-900 to-cyan-950 border border-emerald-500/40 hover:border-emerald-400 cursor-pointer transition-all shadow-xl space-y-2 group"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-bold text-white text-xs group-hover:text-emerald-300 transition-colors flex items-center gap-1.5 flex-wrap">
+                #1 AI Bug Bounty Co-Pilot & 1-Click Vulnerability Finder
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 font-black">NEW</span>
+              </span>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Launch automated multi-stage hunts, triage P1-P4 bounty payouts, and ask AI bug hunting questions.
+              </p>
+            </div>
+          </div>
+          <button className="px-3 py-1.5 rounded-lg bg-emerald-500 group-hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1 shadow-sm shrink-0 self-start sm:self-auto">
+            <span>Launch Hunt</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 

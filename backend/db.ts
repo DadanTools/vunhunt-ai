@@ -106,6 +106,22 @@ export function initDatabase() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS cve_intelligence (
+      id TEXT PRIMARY KEY,
+      query TEXT NOT NULL,
+      cve_id TEXT,
+      title TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      cvss_score REAL,
+      affected_software TEXT,
+      cwe TEXT,
+      description TEXT NOT NULL,
+      remediation TEXT NOT NULL,
+      sources TEXT NOT NULL,
+      source_engine TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Initialize default settings and sample local test lab scope if empty

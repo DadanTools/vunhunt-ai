@@ -18,6 +18,7 @@ import { TemplatesTab } from './components/TemplatesTab.tsx';
 import { ReportsTab } from './components/ReportsTab.tsx';
 import { ToolsAuditTab } from './components/ToolsAuditTab.tsx';
 import { TerminalTab } from './components/TerminalTab.tsx';
+import { AiCopilotTab } from './components/AiCopilotTab.tsx';
 import { ScopeRule, Asset, ScanJob, Finding, ProxyLog, AuditLog, ToolHealth } from './types.ts';
 
 export default function App() {
@@ -303,6 +304,14 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'copilot' && (
+              <AiCopilotTab 
+                scopes={scopes} 
+                onNavigateToTab={setActiveTab}
+                onRefreshFindings={loadData}
+              />
+            )}
+
             {activeTab === 'terminal' && (
               <TerminalTab scopes={scopes} onNavigateToTab={setActiveTab} />
             )}
@@ -327,6 +336,7 @@ export default function App() {
                 onImportAssets={handleImportAssets}
                 onRunSubfinder={handleRunSubfinder}
                 onProbeAsset={handleProbeAsset}
+                onRefreshFindings={loadData}
               />
             )}
 

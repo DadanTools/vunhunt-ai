@@ -19,10 +19,12 @@ import {
   Gauge,
   Sparkles,
   Award,
-  Activity
+  Activity,
+  ShieldAlert
 } from 'lucide-react';
 import { ToolHealth, AuditLog } from '../types.ts';
 import { ResourceMonitor } from './ResourceMonitor.tsx';
+import { CveIntelligencePanel } from './CveIntelligencePanel.tsx';
 
 interface ToolsAuditTabProps {
   tools: Record<string, ToolHealth>;
@@ -38,7 +40,7 @@ interface BenchmarkState {
 }
 
 export const ToolsAuditTab: React.FC<ToolsAuditTabProps> = ({ tools, auditLogs }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'monitor' | 'comparison' | 'tools' | 'audit'>('monitor');
+  const [activeSubTab, setActiveSubTab] = useState<'cve' | 'monitor' | 'comparison' | 'tools' | 'audit'>('cve');
   const [auditQuery, setAuditQuery] = useState('');
   const [benchmark, setBenchmark] = useState<BenchmarkState>({
     isRunning: false,
@@ -183,44 +185,58 @@ export const ToolsAuditTab: React.FC<ToolsAuditTabProps> = ({ tools, auditLogs }
   return (
     <div className="space-y-4 pb-20">
       {/* Subtab Navigation Switcher */}
-      <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800 text-xs font-mono-code">
+      <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800 text-xs font-mono-code overflow-x-auto">
+        <button
+          onClick={() => setActiveSubTab('cve')}
+          className={`flex-1 min-w-[90px] py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
+            activeSubTab === 'cve' ? 'bg-slate-800 text-cyan-400 shadow-sm' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5" />
+          <span>CVE Intel</span>
+        </button>
         <button
           onClick={() => setActiveSubTab('monitor')}
-          className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 min-w-[110px] py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
             activeSubTab === 'monitor' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-white'
           }`}
         >
           <Activity className="w-3.5 h-3.5" />
-          <span>Resource Monitor</span>
+          <span>Monitor</span>
         </button>
         <button
           onClick={() => setActiveSubTab('comparison')}
-          className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
-            activeSubTab === 'comparison' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-400 hover:text-white'
+          className={`flex-1 min-w-[120px] py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
+            activeSubTab === 'comparison' ? 'bg-slate-800 text-amber-400 shadow-sm' : 'text-slate-400 hover:text-white'
           }`}
         >
           <Scale className="w-3.5 h-3.5" />
-          <span>Competitor Matrix</span>
+          <span>Competitors</span>
         </button>
         <button
           onClick={() => setActiveSubTab('tools')}
-          className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 min-w-[100px] py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
             activeSubTab === 'tools' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'
           }`}
         >
           <Terminal className="w-3.5 h-3.5" />
-          <span>Runtime Health</span>
+          <span>Health</span>
         </button>
         <button
           onClick={() => setActiveSubTab('audit')}
-          className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 min-w-[90px] py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 ${
             activeSubTab === 'audit' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
-          <span>Audit Log ({auditLogs.length})</span>
+          <span>Audit ({auditLogs.length})</span>
         </button>
       </div>
+
+      {/* Subtab: CVE Intelligence Panel */}
+      {activeSubTab === 'cve' && (
+        <CveIntelligencePanel />
+      )}
 
       {/* Subtab: Live Resource Monitor */}
       {activeSubTab === 'monitor' && (
